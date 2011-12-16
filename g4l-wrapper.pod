@@ -1,0 +1,138 @@
+#!/usr/bin/env perl
+# vim: expandtab ft=perl
+#===============================================================================
+#
+#         FILE: g4l-wrapper.pod
+#
+#  DESCRIPTION: Documentation for g4l-wrapper
+#
+#       AUTHOR: Piotr Rogoża (piecia), <rogoza.piotr@gmail.com>
+#      COMPANY: dracoRP
+#      CREATED: 27.09.2011
+#     REVISION: ---
+#===============================================================================
+use warnings;
+use strict;
+use Pod::Man;
+
+my $parser = Pod::Man->new(
+	release => 1.6,
+	section => 1,
+	center => 'Wrapper to the G4L',
+	utf8 => 1,
+);
+my $podfile="g4l-wrapper.pod";
+my $manfile="g4l-wrapper.1";
+$parser->parse_from_file ($podfile, $manfile);
+system("gzip -f -9 $manfile");
+
+=pod
+
+=encoding utf8
+
+=head1 NAME
+
+B<g4l-wrapper> - wrapper to the g4l project I<http://g4l.sourceforge.net/>
+
+=head1 USAGE
+
+Before you first use, do symlink to the program g4l-wrapper as: I<g4l-client, g4l-server, g4l-pxe>. Then you have to run individual programs.
+
+=head2 g4l-client
+
+There are parameters can be added to the kernel parameters:
+
+B<g4l>=I<action,to,from,proto,method,filename,brpart,tspart,dir,other,split>
+
+Where options are in the form:
+
+B<action>=I<backup,recover,manual>
+    Backup partition, recover partition or run only shell
+
+B<to>=I<local,server>
+    Local backup or to a server
+
+B<from>=I<local,server>
+    Local recover or from a server, if I<proto> is equal B<multicast> then B<from> can be omitted.
+
+B<proto>=I<ftp,multicast> or none
+    For local backup/recover B<proto> does not need to be defined. If B<proto> is not defined for I<server> I<backup/recover> then we suppose that is equal I<ftp>.
+
+B<method>=I<ntfs,dd|other>
+    Define a method of backup/recover. For I<backup> I<method> does not need be defined then a filesystem on a partition will be checked. For a ntfs filesystem will be ... I<ntfs> and I<other>(or I<dd>) for other. Method I<dd> is equivalent I<other>.
+
+B<filename>=I<name of file>
+    The file name to which or from which read a image of partition. I<filename> can also include a directory, then the variable I<dir> can be empty.
+
+B<dir>=I<name of directory>
+    Directory path where/from which a file will be write/read.
+
+B<brpart>=I<backup/restore partition>
+    Name of partition which will be backup or recover. The name must be without leading I</dev/>.
+
+B<tspart>=I<target/source partition>
+    Name of partition to or from which a image will be saved or read.
+
+B<exclude>=I<list>
+    When backup a partition don't backup there files/directories. The list can be in form: a file, a directory, @list of files or directories and @ftp:list on ftp server.
+
+B<split>=I<size>
+    When backup partition split a file into pieces. You can use: KB(1000), K(1024), MB(1000*1000), M(1024*1024) and so on for G, T, P, E, Z, Y. For more see man L<split>.
+
+=head3 EXAMPLES
+
+B<Backup>
+    g4l=action=backup,to=local,brpart=sda3,tspart=sda4,filename=windows,exclude=pagefile.sys
+    g4l=action=backup,to=server,brpart=sda3,filename=image,dir=2011.09.11,method=other,exclude=@ftp://username:password@server/dir/list
+
+B<Recover>
+    g4l=action=recover,from=local,filename=windows,dir=2011.08.12,method=ntfs,brpart=sda3
+    g4l=action=recover,from=server,proto=ftp,brpart=sda3,filename=image
+    g4l=action=recover,from=server,proto=multicast,brpart=sda3,method=ntfs
+
+B<Manual>
+    g4l=action=manual
+
+=head2 g4l-server
+
+B<g4l-server> [options]
+
+=head1 CONFIGURATION AND ENVIRONMENT
+
+You can configure g4l-wrapper by modyfing F<g4l.conf>. This file is read by command source then you can use bash syntax.
+
+=head1 FILES
+
+F<g4l.conf>
+    Configuration file for g4l-wrapper
+
+F<g4l-client, g4l-server, g4l-pxe>
+    Symlinks to the g4l-wrapper
+
+=head1 TODO
+
+Support:
+    B<method>=I<partimage>
+    B<to,from>=I<ssh/sshfs>
+    Correct form I<size>
+    Local client/server - one of computers can work as a server and another as a client.
+
+=head1 AVAILABILITY
+
+The latest version of this program can be found at I<http://dracorp.one.pl/source/g4l-wrapper/>
+
+=head1 SEE ALSO
+
+The G4L page: I<http://g4l.sourceforge.net/>
+
+=head1 AUTHORS
+
+Piotr Rogoża I<rogoza dot piotr at gmail dot com>
+
+=head1 LICENCE AND COPYRIGHT
+
+Copyright (c) <2011> <Piotr Rogoża> (<rogoza dot piotr at gmail dot com>). All rights reserved.
+
+This program is distributed under the terms of the GNU General Public License by the Free Software Foundation.
+
+=cut

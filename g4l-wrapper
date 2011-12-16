@@ -1,0 +1,1016 @@
+#!/bin/bash - 
+#set -e - exit if any function exits with non-zero status
+#===============================================================================
+#
+#          FILE:  g4l-wrapper
+# 
+#         USAGE:  ./g4l-wrapper
+# 
+#   DESCRIPTION:  Client/server - wrapper to the g4l 
+# 
+#       OPTIONS:  ---
+#  REQUIREMENTS:  ---
+#          BUGS:  ---
+#         NOTES:  ---
+#        AUTHOR: Piotr Rogoża (piecia), rogoza dot piotr at gmail dot com
+#       COMPANY: dracoRP
+#       CREATED: 20.09.2011 11:23:21 CEST
+#       VERSION:
+#      REVISION:  ---
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# Global variables
+#-------------------------------------------------------------------------------
+VERSION=1.6
+NAME=g4l-wrapper
+AUTHOR='Piotr Rogoza aka dracoRP'
+EMAIL='rogoza dot piotr at gmail dot com'
+YEAR='2011'
+# Configuration
+CONF='g4l.conf'
+# Dont't modify belowe variables!!!
+# Internal variables {{{
+BASENAME=$(basename $0)
+#colors
+red='\033[1;31m'
+nc='\033[0m'
+green='\033[1;32m'
+white='\033[1;37m'
+# if split files...
+multifiles="*";
+# network adapter
+device='eth0'
+# for the program dialog
+DIALOG='dialog'
+DIALOG_CANCEL=1
+DIALOG_ESC=255
+DIALOG_OK=0
+# multicast
+UDPSENDER="udp-sender"
+UDPRECEIVER="udp-receiver --interface $device"
+# for function 'progress'
+backtitle="$BASENAME $VERSION, $AUTHOR $YEAR"
+speed=$(ethtool $device | grep Speed | cut -f2 -d:)
+duplex=$(ethtool $device | grep Duplex | cut -f2 -d:)
+# for the program ncftpget
+ncftpopt="-o \"useHELP_SITE=0\""
+ncftpstat="/tmp/ncftpstatus.out"
+progout="/tmp/progress.out"
+#}}}
+#-------------------------------------------------------------------------------
+#  Functions
+#-------------------------------------------------------------------------------
+progress(){ #{{{
+#===  FUNCTION  ================================================================
+#          NAME:  progress
+#   DESCRIPTION:  
+# Created a function for the Progress Screen instead of multiple
+# copies using multiply files. Just setup 1 function with a msg variable
+# to set the minor differnces between earlier versions.
+#===============================================================================
+## Added a redirection of stderr from ncftp commands.
+## Would get an error message rarely about a register 82 problem with duplex
+## mismatch. This error would message the contents of the screen, but the updates
+## of the progress would go on. Redirects output to file, and then displays last
+## two lines of the file.
+## This just sets the starting value as being OK
+  echo "OK" >$ncftpstat
+  echo "0.00% Starting" > $progout
+## Added the Start time of the process to the progress screen
+## Removed - Replaced with modification to jetcat-mod to
+## Display MBs of data transferred of total, and Elapsed time.
+## starttime=`date +%T`
+  (
+  while test "$pcnt" != "100"
+  do
+## changed to a common progress.out file for all progress
+    pcnt=`tail -n1 $progout`
+    echo "XXX"
+## Modified Jetcat-mod to display two decimal positions
+## have to cut off the decimals for the gauge to work.
+    echo $pcnt | cut -d. -f 1
+    printf "\n"
+## msg variable set before calling the progress function to
+## make minor variation between different screens.
+    printf "%s\n" "$msg"
+    printf "\n"
+    printf "%s\n" "The progress bar shows the ratio of written source data"
+    printf "%s\n" "and size of destination (harddrive/image). It will not be"
+    printf "%s\n\n" "accurate if you restore 50G to a 100G drive for example."
+    printf "%s\n\n" "Please stand by, this will take some time!"
+    printf "%s\n\n" "Device: $device Speed: $speed Duplex: $duplex IP: `check_IP | awk '{print $5}'`"
+## Percentage displays with 2 decimal places, plus start time and current time.
+## This lets one check time status of process in addition to percentage
+    printf "%s\n" "Progress"
+    printf "%s\n" "$pcnt"
+## Removed Current time and Start time for modified jetcat-mod
+##echo "Current Time:  `date +%T`"
+##echo "Start Time:    $starttime"
+## add display of last four lines of ncftp stderr if any.
+    echo -n "ncftpstatus: "
+    ncftpstatus=`tail -n4 $ncftpstat`
+    printf "%s\n" "$ncftpstatus"
+    printf "%s\n" "XXX"
+    sleep 5
+  done
+  ) |
+  $DIALOG --backtitle "$backtitle" --title "Working..." --gauge "One moment..." 22 75
+## Outputs start time and current time, so it can be checked if one isn't around at end
+## of process. Also, note one can use Ctrl-Alt F2 to switch to another screen to review
+## the file contents or use the special command option.
+#  printf "%s\n\n" "Last 5 lines of time log" >/tmp/time
+#  tail -n5 $progout >>/tmp/time
+  printf "\n\n%s\n\n" "Last 5 lines of time log with no tabs" >/tmp/time
+  tail -n5 $progout | sed -e 's/\t/ /g' -e 's/%    /%/' >>/tmp/time
+## removed date process since jetcat-mod does a better job
+## echo "$starttime `date +%T`">/tmp/time
+  rm $progout
+  touch $progout
+## Added a pause to let the user see final results before it returns.
+} # eof color }}}
+color_message(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  color_message
+	#   DESCRIPTION:  Coloring messagess
+	#    PARAMETERS:  first parameter to green, second to white, and third reset
+	#       RETURNS:  colored message
+	#===============================================================================
+	if [ $# -eq 3 ]; then
+		echo -e "${green}$1${white}$2${nc}$3"
+	elif [ $# -eq 2 ]; then
+		echo -e "${green}$1${white}$2${nc}"
+	elif [ $# -eq 1 ]; then
+		echo -e "${green}$1${nc}"
+	fi
+}	# eof color_message }}}
+usage(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  usage
+	#   DESCRIPTION:  Print short information about usage
+	#    PARAMETERS:  
+	#       RETURNS:  
+	#===============================================================================
+	echo -e "Before  the first use, do symlink to the program:"
+	echo -e "\tln -s $NAME g4l-client"
+	echo -e "\tln -s $NAME g4l-server"
+	echo -e "\tln -s $NAME g4l-pxe"
+	echo -e "And run the correct program"
+}	# eof usage }}}
+usage_client(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  usage_client
+	#   DESCRIPTION:  Print detailed information about usage
+	#    PARAMETERS:  
+	#       RETURNS:  
+	#===============================================================================
+	echo -e "Parameters which can be added to the kernel parameters"
+	color_message "g4l=" "action,to,from,proto,method,filename,brpart,tspart,dir,other,split"
+	echo -e "\twhere:"
+	color_message "action=backup,recover,manual " "- backup partition, recover partition, do nothing - run only shell"
+	color_message "to=local,server " "- local backup/restore, send to/receive from server"
+	color_message "from=local,server " "- as above"
+	color_message "proto=none,ftp,multicast " "- none for local, connect to ftp server, connect to multicast session"
+	color_message "method=dd,ntfs " "- dd by default, ntfs only for partitions with ntfs filesystem(but program try detect filesystem)"
+	color_message "filename='name of file' " "- name of file which will be write or read from/to partition or server, 'filename' can also include directory, then the variable 'dir' can be empty " "e.g. filename=windows or filename=room21/windows"
+	color_message "brpart " "- backup/restore partition, this partition will be backup or recovered " "e.g. brpart=sda3"
+	color_message "tspart " "- target/source partition, on/from this partition image will be saved/read " "e.g. tspart=sda4"
+	color_message "dir='name of directory' " "- directory patch where/from file will be write/read " "e.g. dir=room21"
+	color_message "exclude=list " "- backup partition, except files " "e.g. exclude=file or exclude=directory or exclude=@list in file" 
+	color_message "split=size " "- split a file into pieces " "e.g. split=2G see man 1 split" 
+	echo -e "\n"
+	echo -e "Some parameters can be definied in configuration file"
+	echo -e "For 'local' proto can be 'none' or empty"
+	echo -e "For 'server proto must be 'ftp' or 'multicast', for 'multicast' filename must be empty!, by default is 'ftp'"
+	echo -e "Method by default is 'dd' and can be empty but a ntfs filesystem can be detected and the method will be set to 'ntfs'"
+	echo -e "dir - you can group yours images into directories"
+}	# eof usage_client }}}
+size_partition(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  size_partition
+	#   DESCRIPTION:  Return size of partition
+	#    PARAMETERS:  partition
+	#       RETURNS:  size of partition
+	#===============================================================================
+	local partition=$1
+	if [[ ! $(grep "\<$partition\>" /proc/partitions) ]]; then
+		return 1
+	else
+		grep "\<$partition\>" /proc/partitions | \
+			head -n 1 | \
+			awk '{print $3}'
+	fi
+}	# eof size_partition }}}
+read_cmdline(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  read_cmdline
+	#   DESCRIPTION:  Read parameters from /proc/cmdline
+	#    PARAMETERS:  
+	#       RETURNS:  
+	#===============================================================================
+	unset g4l
+	export $(cat /proc/cmdline)
+#	export $(cat cmdline) &>/dev/null           # Only for testing
+	# all parameters are write to 'g4l' variable
+	if [ -z "$g4l" ]; then
+		error_message "The variable g4l not definied in kernel parameters"
+		return 1
+	fi
+	for variable in $(echo $g4l | tr ',' ' '); do
+		export $variable
+	done
+}	# eof read_cmdline }}}
+check_filesystem(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  check_filesystem
+	#   DESCRIPTION:  Check filesystem on a partition and return 'ntfs' or 'other', $1 must be without '/dev/'
+	#    PARAMETERS:  name of partition without /dev/
+	#       RETURNS:  string: ntfs or other
+	#===============================================================================
+	local partition=$1
+	if [ -z "$partition" ]; then
+		error_message "The variable '\$1' not definied"
+		return 1
+	elif [[ ! $(grep "\<$partition\>" /proc/partitions) ]]; then
+		error_message "Partition /dev/$partition doesn't exist"
+		return 1
+	else
+		file -s /dev/$partition | grep -iq ntfs
+		if [ $? -eq 0 ]; then 
+			return 'ntfs'
+		else
+			return 'other'
+		fi
+	fi
+}	# eof check_filesystem }}}
+umount_partition(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  umount_partition
+	#   DESCRIPTION:  Umount partition from /mnt/local or second parameter
+	#    PARAMETERS:  partition  directory?
+	#       RETURNS:  error_message code last operation
+	#===============================================================================
+	local partition=$1
+	local directory=$2
+
+	if [ -z "$directory" ]; then
+		directory="/mnt/local"
+	fi
+
+	local ismounted=$(awk -vpart=$partition -vdir="$directory" '$1~part && $2~dir' /etc/mtab)
+	if [ -n "$ismounted" ]; then
+		umount -l "$directory"
+		return $?
+	fi
+	return 0
+}	# eof umount_partition }}}
+mount_partition(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  mount_partition
+	#   DESCRIPTION:  Mount partition to /mnt/local or directory advisable by the second parameter
+	#    PARAMETERS:  partition directory?
+	#       RETURNS:  error_message code last operation, return 0 is the partition is already mounted
+	#===============================================================================
+	local partition=$1
+	local directory=$2;
+
+	local fs=check_filesystem $partition
+	local ismounted=$(awk -vpart=$1 -vdir="$2" '$1~part && $2~dir' /etc/mtab)
+	if [ -n "$ismounted" ]; then # is already mounted 
+		return 0
+	fi
+	if [ -z "$directory" ]; then # test that $2 is sets
+		directory="/mnt/local"
+	fi
+	if [ ! -d $directory ]; then # test that directory exists
+		mkdir -p $directory
+	fi
+	if [[ ! $(grep "\<$partition\>" /proc/partitions) ]]; then # test that partition exists
+		error_message "The partition /dev/$partition doesn't exist."
+		return 1
+	fi
+
+	case $fs in
+		ntfs)
+			ntfs-3g /dev/$partition $directory
+			;;
+		*)
+			mount /dev/$partition $directory
+			;;
+	esac
+
+	if [ $? -ne 0 ]; then
+		error_message "Mounting /dev/$partition on $directory failed"
+		return 1
+	else
+		return 0
+	fi
+}	# eof mount_partition }}}
+remove_exclude(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  remove_exclude
+	#   DESCRIPTION:  before backup a partition remove files or directories specified by the option exclude
+	#    PARAMETERS:  partition
+	#       RETURNS:  error_message code last operation
+	#===============================================================================
+	local directory="/mnt/partitionwithfiles2remove"
+	local partition=$1
+	mount_partition $partition $directory
+	if [ $? -ne 0 ]; then #if mount failed then go back to main program
+		return 1
+	fi
+
+	case $exclude in # test $exclude: may be: files, @list or @ftp://list
+		@ftp) #get list from ftp server, don't use comma(,), at(@) and colon(:) in a password
+			local -A urllist
+			local user passwd server path2list
+			if [ -z "${exclude/*:*@*/}" ]; then # ftp://login:passwd@server/list
+				urllist=($(echo $exclude | awk '{$0 = gensub(/ftp:\/\/([^:]*):?([^@]*)@?([^/]+)(.*)/,"\\1 \\2 \\3 \\4","g"); print}'))
+				user=${urllist[0]}
+				passwd=${urllist[1]}
+				server=${urllist[2]}
+				path2list=${urllist[3]}
+            else                                # ftp://server/list, anonymous 
+				urlist=$((echo $exclude | awk '{$0 = gensub(/ftp:\/\/([^/]+)(.*)/,"\\1 \\2","g"); print}'))
+				user=anonymous
+				passwd='g4l@domain.tld'
+				server=${urllist[0]}
+				path2list=${urllist[1]}
+			fi
+			# get list from ftp server
+			ncftpget $ncftpopt -u $user -p $passwd -c -V -d /tmp/out $server $path2list 2>>$ncftpstat > /$(basename $path2list)
+			path2list="/$(basename $path2list)" # change pathlist to without dir
+			cd $directory || return 1
+			rm -rfv $(<$path2list)
+			cd -
+			break
+			;;
+		@*) #list of files/directories
+			local list=$(echo $exclude | cut -d'@' -f2-)
+			local diskwithlist=$(echo $exclude | cut -d'@' -f2- | cut -d'/' -f1)
+			if [ -f "$list" ]; then # absolute path to the file with list of files/directories to remove relatively a partition with g4l
+				cd $directory || return 1
+				rm -rfv $(<$list)
+				cd -
+			elif [[ $(grep "\<${diskwithlist}\>" /proc/partition) ]]; then #full path to the file e.g. @sda3/directory/list
+				local dirpath2list="/mnt/tmpdir"
+				mount_partition $diskwithlist $dirpath2list
+				if [ $? -eq 0 ]; then # if mounting success then
+					local pathtolist="$dirpath2list/$(echo $exclude | cut -d'/' -f2-)"
+					if [ -f "$pathtolist" ]; then
+						cd $directory || return 1
+						rm -rfv $(<$pathtolist)
+						cd -
+					fi
+				else
+					return 1
+				fi
+			fi
+			break
+			;;
+		*) #file or directory
+			if [ -f "$directory/$exclude" ]; then
+				rm -fv "$directory/$exclude"
+			elif [ -d "$directory/$exclude" ]; then
+				rm -fvr "$directory/$exclude"
+			fi
+			break
+			;;
+	esac
+}	# eof remove_exclude }}}
+local_backup_partition(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  local_backup_partition
+	#   DESCRIPTION:  Local backup partition on other partition
+	#    PARAMETERS:  none
+	#       RETURNS:  0 if success or 1 if fail
+	#===============================================================================
+	if [ -z "$filename" -o -z "$brpart" -o -z "$tspart" ]; then
+		error_message "Parameter 'filename' or 'brpart' or 'tspart' not definied."
+		return 1
+	fi
+
+	
+	local returncode
+	local targetdirectory='/mnt/local'
+	if [ -z "method" ]; then                    # if 'method' is not definied then try to detect filesystem
+		method=check_filesystem $brpart
+	fi
+#	else                                        # else set variable fs to variable 'method'
+#		case $method in
+#			other|dd|ntfs)
+#				fs=$method
+#				;;
+#			*)
+#				error_message "Wrong the parameter 'method=$method'."
+#				return 1
+#				;;
+#		esac
+#	fi
+
+	if [ -n "$exclude" ]; then # remove files from brpart partition
+		remove_exclude $brpart
+	fi
+	
+	case $method in
+		ntfs) #{{{ ntfs partition
+			#local backup ntfs partition
+			color_message "NTFS Backup" " Local backup $brpart partition on $tspart"
+
+			mount_partition $tspart $targetdirectory
+			if [ $? -ne 0 ]; then
+				error_message "Mounting partition $tspart on $targetdirectory failed"
+				return 1
+			fi
+			local dirpath="${targetdirectory}/${BASEDIR:+$BASEDIR/}${dir}"
+
+			if [ ! -d ${dirpath} ]; then
+				mkdir -p ${dirpath}
+			fi
+			
+			# backing up
+			ntfsclone -s -o - /dev/$brpart | \
+				lzop -c - -o ${dirpath}/${filename}
+			
+			returncode=$?
+			if [ $returncode -eq 0 ]; then
+				success_message "Backup NTFS partition $brpart to $tspart:$dirpath/$filename done."
+			else
+				error_message "Backup NTFS partition $brpart to $tspart:$dirpath/$filename failed"
+			fi
+			sync
+			umount_partition $tspart $targetdirectory
+			return $returncode
+			;; #}}}
+		other|dd) #{{{ other partition
+			#local backup other partition
+			color_message "Other Backup" " Local backup $brpart partition on $tspart"
+			mount_partition $tspart $targetdirectory
+			if [ $? -ne 0 ]; then
+				error_message "Mounting partition $tspart on $targetdirectory failed"
+				return 1
+			fi
+
+			local dirpath="${targetdirectory}/${BASEDIR:+$BASEDIR/}${dir}"
+
+			if [ ! -d ${dirpath} ]; then
+				mkdir -p ${dirpath}
+			fi
+			
+			local sizepartition=`size_partition $brpart`
+			pcnt=0
+
+			# backup
+			msg="$BASENAME is backing up partition $brpart on partition $tspart in ${BASEDIR:+$BASEDIR/}${dir}"
+			dd bs=1M if=/dev/${brpart} 2>/dev/null | \
+				jetcat-mod -f 5000 -p $sizepartition 2>$progout | \
+				lzop - -o ${dirpath}/${filename} &
+			returncode=$?
+			progress
+#			returncode=$?
+			if [ $returncode -eq 0 ]; then
+				success_message "Backup Other partition $brpart to $tspart/$dir/$filename done."
+			else
+				error_message "Backup Other partition $brpart to $tspart/$dir/$filename failed."
+			fi
+			sync
+			umount_partition $tspart
+			return $returncode
+			;; #}}}
+		*)
+			error_message "Wrong the parameter 'method=$method'."
+			return 1
+			;;
+	esac
+}	# eof local_backup_partition }}}
+ftp_backup_partition(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  ftp_backup_partition
+	#   DESCRIPTION:  Backup partition to ftp server
+	#    PARAMETERS:  none
+	#       RETURNS:  0 if success_message, 1 if failed
+	#===============================================================================
+	if [ -z "$filename" -o -z "$brpart" ]; then
+		error_message "Parameter filename or brpart not definied"
+		return 1
+	fi
+	if [ -z "$SERVER" -o -z "$USER" -o -z "$PASSWD" ]; then
+		error_message "Parameter SERVER or USER or PASSWD not definied in config file"
+		return 1
+	fi
+
+	if [ -z "$method" ]; then #if method is not definied then try to detect filesystem on $brpart
+		method=check_filesystem $brpart
+	fi
+
+	if [ -n "$exclude" ]; then # remove files from brpart partition
+		remove_exclude $brpart
+	fi
+	
+	local returncode
+	local dirpath="${BASEDIR:+$BASEDIR/}${dir}"
+	local sizepartition=`size_partition $brpart`
+	case $method in
+		ntfs) #{{{ server backup ntfs partition
+			color_message "NTFS Backup" " Server backup $brpart partition on server $SERVER"
+			ntfsclone -s -o - /dev/${brpart} | \
+				lzop -c - | \
+				ncftpput -o "useHELP_SITE=0" -m -u $USER -p $PASSWD -c -d /tmp/out $SERVER "${dirpath}/${filename}" 2>>$ncftpstat
+			returncode=$?
+			if [ $returncode -eq 0 ]; then
+				success_message "Backup NTFS partition $brpart to the server $SERVER done."
+			else
+				error_message "Backup NTFS partition $brpart to  the server $SERVER failed."
+			fi
+			;; #}}}
+		other|dd) #{{{ server backup other partition
+			pcnt=0
+			color_message "Other Backup" " Server backup $brpart partition on server $SERVER"
+			msg="$BASENAME is backing up partition $brpart on server $SERVER in ${dirpath}/${filename}"
+			dd bs=1M if=/dev/${brpart} 2>/dev/null | \
+				jetcat-mod -f 5000 -p $sizepartition 2>$progout | \
+				lzop -c - | \
+				ncftpput -o "useHELP_SITE=0" -m -u ${USER} -p ${PASSWD} -c -d /tmp/out ${SERVER} "${dirpath}/${filename}" 2>>$ncftpstat & 
+			returncode=$?  
+			progress
+#			returncode=$?
+			if [ $returncode -eq 0 ]; then
+				success_message "Backup Other partition $brpart to the server $SERVER done."
+			else
+				error_message "Backup Other partition $brpart to  the server $SERVER failed."
+			fi
+			;; #}}}
+		*)
+			error_message "Wrong the parameter 'method=$method'."
+			return 1
+			;;
+	esac
+	return $returncode
+}	# eof ftp_backup_partition }}}
+backup_partition(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  backup_partition
+	#   DESCRIPTION:  write partition to image to other local partition or to server
+	#    PARAMETERS:  
+	#       RETURNS:  
+	#===============================================================================
+	if [ -z "$filename" ]; then
+		error_message "Missing the parametr 'filename'."
+		return 1
+	fi
+	local returncode
+
+	case $to in
+		local)
+			local_backup_partition
+			returncode=$?
+			;;
+		server)
+			if [ -z "$proto" ]; then # by default use ftp server
+				proto='ftp'
+			fi
+			case $proto in
+				ftp)
+					ftp_backup_partition
+					returncode=$?
+					;;
+				*)
+					error_message "Wrong the parameter 'proto=$proto'."
+					return 1
+					;;
+			esac
+			;;
+		*)
+			error_message "Wrong the parameter 'to=$to'."
+			return 1
+			;;
+	esac
+	return $returncode
+}	# eof backup_partition }}}
+local_recover_partition(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  local_recover_partition
+	#   DESCRIPTION:  
+	#    PARAMETERS:  
+	#       RETURNS:  
+	#===============================================================================
+	if [ -z "$filename" -o -z "$brpart" -o -z "$tspart" ]; then
+		error_message "Parameter 'filename' or 'brpart' or 'tspart' not definied."
+		return 1
+	fi
+	local returncode
+	local sourcedirectory='/mnt/local'
+	if [ -z "$method" ]; then
+        method='dd' #by default use dd
+	fi 
+	
+	case $method in
+		ntfs) #{{{ local recover ntfs partition
+			color_message "NTFS Recover" " Local recover $brpart partition from $tspart"
+			mount_partition $tspart $sourcedirectory
+			if [ $? -ne 0 ]; then
+				error_message "Mounting partition $tspart on $sourcedirectory failed"
+				return 1
+			fi
+
+			# recovering
+			cat $sourcedirectory/$dir/${filename} | \
+				lzop -d  -c -| \
+				ntfsclone -r --overwrite /dev/${brpart} -
+			returncode=$?
+			if [ $returncode -eq 0 ]; then
+				success_message "Recover NTFS partition $brpart from $tspart/$dir/$filename done."
+			else
+				error_message "Recover NTFS partition $brpart from $tspart/$dir/$filename failed."
+			fi
+			sync
+			umount_partition $tspart $sourcedirectory
+			return $returncode
+			;; #}}}
+		other|dd) #{{{ local recover other partition
+			color_message "Other Recover" " Local recover $brpart partition from $tspart"
+			mount_partition $tspart $sourcedirectory
+			if [ $? -ne 0 ]; then
+				error_message "Mounting partition $tspart on $sourcedirectory failed"
+				return 1
+			fi
+			pcnt=0
+			local sizepartition=`size_partition $brpart`
+			local dirpath="${sourcedirectory}/${BASEDIR:+$BASEDIR/}${dir}"
+			
+			# recover
+			msg="$BASENAME is restoring partition $brpart from partition $tspart from ${BASEDIR:+$BASEDIR/}${dir}/${filename}"
+			cat ${dirpath}/${filename} | \
+				jetcat-mod -f 5000 -p $sizepartition 2>$progout | \
+				dd bs=1M of=/dev/${brpart} 2>/dev/null &
+			returncode=$?
+			progress
+#			returncode=$?
+			if [ $returncode -eq 0 ]; then
+				success_message "Recover Other partition $brpart from $tspart:${dirpath}/$filename done."
+			else
+				error_message "Recover Other partition $brpart from $tspart:${dirpath}/$filename failed."
+			fi
+			sync
+			umount_partition $tspart $sourcedirectory
+			return $returncode
+			;; #}}}
+		*)
+			error_message "Wrong the parameter 'method=$method'."
+			return 1
+			;;
+	esac
+}	# eof local_recover_partition }}}
+ftp_recover_partition(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  ftp_recover_partition
+	#   DESCRIPTION:  Recover partition from image from ftp server
+	#    PARAMETERS:  none
+	#       RETURNS:  0|1
+	#===============================================================================
+	if [ -z "$filename" -o -z "$brpart" ]; then
+		error_message "Parameter filename or brpart not definied"
+		return 1
+	fi
+	if [ -z "$SERVER" -o -z "$USER" -o -z "$PASSWD" ]; then
+		error_message "Parameter SERVER or USER or PASSWD not definied in config file"
+		return 1
+	fi
+	local returncode
+
+	local sizepartition=`size_partition $brpart`
+	pcnt=0
+
+	if [ -z "$method" ]; then # by default use dd
+		method='other'
+	fi
+
+	local dirpath="${BASEDIR:+$BASEDIR/}${dir}"
+	case $method in
+		ntfs) #{{{ recover ntfs partition from ftp server
+			ncftpget -o "useHELP_SITE=0" -u $USER -p $PASSWD -c -V -d /tmp/out $SERVER "${dirpath}/${filename}" 2>>$ncftpstat | \
+				lzop -d  -c -| \
+				ntfsclone -r --overwrite /dev/${brpart} -
+			returncode=$?
+
+			if [ $returncode -eq 0 ]; then
+				success_message "Recover NTFS partition $brpart from ftp server $SERVER/${dirpath} done."
+			else
+				success_message "Recover NTFS partition $brpart from ftp server $SERVER/${dirpath} failed."
+			fi
+			;; #}}}
+		other|dd) #{{{ recover other partition from ftp server
+			msg="$BASENAME is restoring partition $brpart from server $SERVER from ${dirpath}/${filename}"
+			ncftpget -o "useHELP_SITE=0" -u $USER -p $PASSWD -c -V -d /tmp/out $SERVER ${dirpath}/${filename} 2>>$ncftpstat | \
+				lzop -d  -c -| \
+				jetcat-mod -f 5000 -p $sizepartition 2>$progout | \
+				dd bs=1M of=/dev/${brpart} 2>/dev/null &
+			returncode=$?
+			progress
+#			returncode=$?
+			
+			if [ $returncode -eq 0 ]; then
+				success_message "Recover Other partition $brpart from ftp server $SERVER/${dirpath} done."
+			else
+				success_message "Recover Other partition $brpart from ftp server $SERVER/${dirpath} failed."
+			fi
+			;; #}}}
+		*)
+			error_message "Wrong the parameter 'method=$method'."
+			return 1
+			;;
+	esac
+	sync
+	return $returncode
+}	# eof ftp_recover_partition }}}
+multicast_recover_partition(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  multicast_recover_partition
+	#   DESCRIPTION:  Recover partition from multicast session
+	#    PARAMETERS:  none
+	#       RETURNS:  0 if success or 1 if fail
+	#===============================================================================
+	if [ -z "$brpart" ] ;then 
+		error_message "Parameter the 'brpart' not definied"
+		return 1
+	fi
+	
+	if [ -z "$method" ]; then # by default use dd
+		method='other'
+	fi
+	
+	local returncode
+	clear
+	check_IP
+	case $method in
+		ntfs) #{{{ 
+			color_message "NTFS Recover" " Multicast recover $brpart partition ${filename:+from $filename}"
+			$UDPRECEIVER | \
+				lzop -d -c - | \
+				ntfsclone -r -O /dev/${brpart} -
+			returncode=$?
+			if [ $returncode -eq 0 ]; then
+				success_message "Recover NTFS partition $brpart from multicast session done."
+			else
+				success_message "Recover NTFS partition $brpart from multicast session failed."
+			fi
+			;; #}}}
+		other|dd) #{{{
+			color_message "Other Recover" " Multicast recover $brpart partition ${filename:+from $filename}"
+			$UDPRECEIVER --pipe 'lzop -d -c -' -f /dev/${brpart}
+			returncode=$?
+			if [ $returncode -eq 0 ]; then
+				success_message "Recover Other partition $brpart from multicast session done."
+			else
+				success_message "Recover Other partition $brpart from multicast session failed."
+			fi
+			;; #}}}
+		*)
+			error_message "Wrong the parameter 'method=$method'."
+			return 1
+			;;
+	esac
+	sync
+	return $returncode
+}	# eof multicast_recover_partition }}}
+recover_partition(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  recover_partition
+	#   DESCRIPTION:  recover partition from image from other local partition or ftp server or multicast session
+	# 				  In recover mode filesystem on brpart is not detected, it must by given by defining the parameter 'method'
+	#    PARAMETERS:  none
+	#       RETURNS:  0 if success, 1 if fail
+	#===============================================================================
+	if [ -z "$filename" ]; then
+		error_message "Missing the parameter 'filename'."
+		return 1
+	fi
+
+	if [ -z "$from" -a "$proto" == 'multicast' ]; then #multicast session can be only from server
+		from=server
+	fi
+
+	local returncode
+	case $from in
+		local)
+			local_recover_partition
+			returncode=$?
+			;;
+		server)
+			if [ -z "$proto" ]; then # by default reovery from ftp server
+				proto=ftp
+			fi
+			case $proto in
+				ftp)
+					ftp_recover_partition
+					returncode=$?
+					;;
+				multicast)
+					multicast_recover_partition
+					returncode=$?
+					;;
+				*)
+					error_message "Wrong the parameter 'proto=$proto'."
+					return 1
+			esac
+			;;
+		*)
+			error_message "Wrong the parameter 'from=$from'."
+			return 1
+			;;
+	esac
+	return $returncode
+}	# eof recover_partition }}}
+run_manual(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  run_manual
+	#   DESCRIPTION:  Do nothing, only run shell
+	#    PARAMETERS:  none
+	#       RETURNS:  
+	#===============================================================================
+	echo -e "The program $BASENAME was launched in 'manual' mode. Now you can run the g4l program or anything else."
+	exit 0
+}	# eof run_manual }}}
+check_var_dir(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  check_var_dir
+	#   DESCRIPTION:  Checking the variable 'dir' that is set,
+	# 				  if not check the variable 'filename' and set 'dir' to dirname 
+	#    PARAMETERS:  none
+	#       RETURNS:  0|1
+	#===============================================================================
+    if [ -z "$filename" ]; then
+        return
+    fi
+	local tmpdir=$(dirname $filename)
+	if [ -z "$dir" -a -n "$filename" ]; then
+		if [ "$tmpdir" != '.' ]; then
+			dir=$tmpdir                				# set $dir to dirname $filename
+			filename=$(basename $filename)          # set filename to only name of file
+		fi
+	elif [ -n "$dir" -a -n "$filename" ]; then
+		if [ "$tmpdir" != '.' ]; then
+			#truncate $dir from ending '/'
+			dir=${dir%/}
+			dir+="/$tmpdir"
+			filename=$(basename $filename)
+		fi
+	fi
+}	# eof check_var_dir }}}
+error_message(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  error_message
+	#   DESCRIPTION:  Print error message
+	#    PARAMETERS:  message
+	#       RETURNS:  colored message
+	#===============================================================================
+	echo -e "${red}Error: ${white}$*${nc}\n"
+}	# eof error_message }}}
+success_message(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  success_message
+	#   DESCRIPTION:  Print success message 
+	#    PARAMETERS:  message
+	#       RETURNS:  colored message
+	#===============================================================================
+	echo -e "${green}Success: ${white}$*${nc}\n"
+}	# eof success_message }}}
+check_IP(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  check_IP
+	#   DESCRIPTION:  Check IP address
+	#    PARAMETERS:  
+	#       RETURNS:  0|1
+	#===============================================================================
+	local IP=$(ifconfig $device | grep 'inet addr' | grep -v '127.0.0.1' | cut -d':' -f2 | cut -d' ' -f1)
+	if [ -n "$IP" ]; then
+		color_message "Actual address IP is:" "" " $IP"
+		return 0
+	else
+		error_message "The IP address has not been obtained."
+		return 1
+	fi
+}	# eof check_IP }}}
+run_client(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  run_client
+	#   DESCRIPTION:  Main function activates client g4l
+	#    PARAMETERS:  none
+	#       RETURNS:  0|1
+	#===============================================================================
+	read_cmdline || return 1
+	check_var_dir 
+	read_config || return 1
+	local returncode
+	case $action in
+		manual)
+			run_manual
+			;;
+		backup) #local or server
+			backup_partition
+			returncode=$?
+			;;
+		recover) #local or server
+			recover_partition
+			returncode=$?
+			;;
+		*)
+			error_message "Wrong the parameter 'action=$action'."
+			return 1
+			;;
+	esac
+	return $returncode
+}	# eof run_client }}}
+clean_env(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  clean_env
+	#   DESCRIPTION:  Clean environments
+	#    PARAMETERS:  none
+	#       RETURNS:  
+	#===============================================================================
+	if [ -z "$g4l" ]; then
+		error_message "The parameter 'g4l' not definied."
+		return 1
+	fi
+	for variable in $(echo ${g4l//,/ } | cut -d'=' -f1); do
+		unset $zmienna
+	done
+	unset g4l
+}	# eof clean_env }}}
+reboot_client(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  reboot_client
+	#   DESCRIPTION:  Reboot machine after a successful run g4l-client
+	#    PARAMETERS:  none
+	#       RETURNS:  none
+	#===============================================================================
+	if [[ -n "$POWEROFF" && 0$POWEROFF -eq 1 ]]; then
+		if [ -z "$DELAY" ]; then
+			DELAY=5
+		fi
+		color_message "Poweroff\c"
+		for step in $(eval echo {1..${DELAY}}); do
+			echo -e ".\c"
+			sleep 1
+		done
+		echo -e "\n"
+		poweroff
+	elif [[ -n "$REBOOT" && 0$REBOOT -eq 1 ]]; then
+		if [ -z "$DELAY" ]; then
+			DELAY=5
+		fi
+		color_message "Rebooting\c"
+		for step in $(eval echo {1..${DELAY}}); do
+			echo -e ".\c"
+			sleep 1
+		done
+		echo -e "\n"
+		reboot
+	fi
+}	# eof reboot_client }}}
+read_config(){ #{{{
+	#===  FUNCTION  ================================================================
+	#          NAME:  read_config
+	#   DESCRIPTION:  Read configuration file. Some variables can be definied this.	
+	#    PARAMETERS:  none
+	#       RETURNS:  
+	#===============================================================================
+	if [ -r /etc/$CONF ]; then #global for system
+		source /etc/$CONF
+	elif [ -r ./$CONF ]; then #user config
+		source ./$CONF
+	elif [ -r $CONF ]; then #absolute path in $CONF
+		source $CONF
+	else
+		error_message "The configuration file doesn't exist."
+		return 1
+	fi
+	return 0
+}	# eof read_config }}}
+#-------------------------------------------------------------------------------
+#  Main program
+#-------------------------------------------------------------------------------
+case $1 in
+	-h|--help)
+		usage_client
+		exit 0
+esac
+case $BASENAME in
+	g4l-client)
+		run_client && reboot_client
+		;;
+	g4l-server)
+		run_server
+		;;
+	g4l-pxe)
+		run_pxe
+		;;
+	*)
+		usage
+		exit 1
+		;;
+esac
+# Cleaning
+clean_env
+
+exit 0

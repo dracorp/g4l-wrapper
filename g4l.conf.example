@@ -1,0 +1,103 @@
+#===============================================================================
+#
+#          FILE:  g4l.conf
+# 
+#   DESCRIPTION:  Configuration file for the program g4l-wrapper
+# 
+#        AUTHOR: Piotr Rogoża (piecia), rogoza dot piotr at gmail dot com
+#       COMPANY: dracoRP
+#       CREATED: 20.09.2011 11:40:15 CEST
+#===============================================================================
+#-------------------------------------------------------------------------------
+# Server configuration
+#-------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------
+# Client configuration 
+#-------------------------------------------------------------------------------
+SERVER='192.168.100.1'
+USER='ghost'
+PASSWD='secret_password'
+# reboot? 0 if not, 1 if yes
+REBOOT=0
+# poweroff? 0 if not, 1 if yes, first is checking POWEROFF, second REBOOT
+POWEROFF=0
+# delay before reboot/poweroff
+DELAY=5
+case $dir in
+	salaa) #{{{ options for room A
+		case $filename in
+			windows)
+				brpart=hda3
+				method=ntfs
+				;;
+			linux)
+				brpart=hda5
+				method=dd
+				;;
+			boot)
+				brpart=hda2
+				method=dd
+				;;
+		esac
+#		tspart=
+		;; #}}}
+	salab) #{{{  options for room B
+		case $filename in
+			windows)
+				brpart=sda3
+				method=ntfs
+				;;
+			linux)
+				brpart=sda6
+				method=dd
+				;;
+			boot)
+				brpart=sda1
+				method=dd
+				;;
+		esac
+		tspart=sda7
+		;; #}}}
+	salac) #{{{  options for room C
+		case $filename in
+			windows)
+				brpart=hda3
+				method=ntfs
+				;;
+			linux)
+				brpart=hda6
+				method=dd
+				;;
+			boot)
+				brpart=hda1
+				method=dd
+				;;
+		esac
+		tspart=hda7
+		;; #}}}
+	salad) #{{{  options for room D
+		POWEROFF=1
+		case $filename in
+			windows)
+				brpart=hda3
+				method=ntfs
+				;;
+			linux)
+				brpart=hda6
+				method=dd
+				;;
+			boot)
+				brpart=hda1
+				method=dd
+				;;
+		esac
+		tspart=7
+		;; #}}}
+esac
+#-------------------------------------------------------------------------------
+#  Other configuration
+#-------------------------------------------------------------------------------
+# base directory for all images, don't use slash on begining
+BASEDIR=img
+# vi: ft=sh

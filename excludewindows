@@ -1,0 +1,7 @@
+WINDOWS/Temp/*
+WINDOWS/\$*
+WINDOWS/KB*.log
+pagefile.sys
+RECYCLER
+WINDOWS/SoftwareDistribution/*
+Documents\ and\ Settings/{ciwe,admin}/Ustawienia\ lokalne/Temp/*

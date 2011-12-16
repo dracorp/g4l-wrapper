@@ -1,0 +1,8 @@
+Wrapper to the G4L project http://g4l.sf.net/
+Options are passed by kernel's options in grub or lilo or PXE eg.:
+
+root (hd0,0) 
+kernel /g4l/bzImage ramdisk_size=65536 root=/dev/ram0 g4l=action=backup,to=local,brpart=sda3,tspart=sda4,filename=windows,exclude=pagefile.sys
+initrd /g4l/ramdisk.gz
+
+Not tested on Windows with boot.ini yet.
